@@ -10,95 +10,77 @@ import {
 } from "@solana/web3.js";
 import bignum from "bignum";
 import borsh from "borsh";
+import {
+  MultisigWallet,
+  MultisigWalletSchema,
+  MultisigWalletRequestSchema,
+  MultisigWalletRequest,
+} from "./state.js";
 
-const programId = "5FpL8Pq6ahy8dh7ydXqfYrJYCiKDHrwcGFGtRoZ1t9DA";
-class MultisigWallet {
-  signer1 = new Uint8Array(32);
-  signer2 = new Uint8Array(32);
-  signer3 = new Uint8Array(32);
-  constructor(fields = undefined) {
-    if (fields) {
-      this.signer1 = fields.signer1 || this.signer1;
-      this.signer2 = fields.signer2 || this.signer2;
-      this.signer3 = fields.signer3 || this.signer3;
-    }
-  }
-}
-const MultisigWalletSchema = new Map([
-  [
-    MultisigWallet,
-    {
-      kind: "struct",
-      fields: [
-        ["m", "u8"],
-        ["is_initialized", "u8"],
-        ["signer1", [32]],
-        ["signer2", [32]],
-        ["signer3", [32]],
-      ],
-    },
-  ],
-]);
+const PROGRAM_ID = "6YYczekdYrXv6KNU4eGRjsUe4yr2XdPKarrm8gQDTDWt";
 
-(async () => {
-  const connection = new Connection("http://localhost:8899", "confirmed");
+const generate_signers = () => {
+  const signer1 = Keypair.generate();
+  const signer2 = Keypair.generate();
+  const signer3 = Keypair.generate();
 
-  const wallet = Keypair.generate();
-  const airdropSignature = await connection.requestAirdrop(
-    wallet.publicKey,
-    LAMPORTS_PER_SOL
-  );
-  await connection.confirmTransaction(airdropSignature);
+  return [signer1, signer2, signer3];
+};
 
-  const programKey = new PublicKey(programId);
-
-  const signer1 = Keypair.generate().publicKey;
-  const signer2 = Keypair.generate().publicKey;
-  const signer3 = Keypair.generate().publicKey;
-  const m = 2;
-  const WALLET_SIZE = borsh.serialize(
+/**
+ *
+ * @param {import("@solana/web3.js").Connection} connection
+ */
+const create_init_wallet_account = async (
+  connection,
+  [signer1, signer2, signer3],
+  required_amount_of_signs,
+  payer,
+  programKey
+) => {
+  const wallet_size = borsh.serialize(
     MultisigWalletSchema,
     new MultisigWallet({
-      m: m,
-      signer1: signer1.toBytes(),
-      signer2: signer2.toBytes(),
-      signer3: signer3.toBytes(),
+      m: required_amount_of_signs,
+      signer1: signer1.publicKey.toBytes(),
+      signer2: signer2.publicKey.toBytes(),
+      signer3: signer3.publicKey.toBytes(),
     })
   ).length;
 
   const lamports = await connection.getMinimumBalanceForRentExemption(
-    WALLET_SIZE
+    wallet_size
   );
-
-  // console.log({ lamports });
 
   const transferAcc = new Keypair();
 
-  console.log(transferAcc.publicKey.toBase58());
   const transferAccPubKey = transferAcc.publicKey;
 
   const transaction_1 = new Transaction().add(
     SystemProgram.createAccount({
-      fromPubkey: wallet.publicKey,
+      fromPubkey: payer.publicKey,
       newAccountPubkey: transferAccPubKey,
-      space: WALLET_SIZE,
-      lamports: lamports + 1000,
+      space: wallet_size,
+      lamports: lamports,
       programId: programKey,
     })
   );
 
-  // Complete this function call with the expected arguments.
-  const hash_1 = await sendAndConfirmTransaction(connection, transaction_1, [
-    wallet,
-    transferAcc,
-  ]);
+  return [
+    transferAccPubKey,
+    await sendAndConfirmTransaction(connection, transaction_1, [
+      payer,
+      transferAcc,
+    ]),
+  ];
+};
 
-  // console.log({ hash_1, transferAccPubKey });
-
-  const r = await connection.getTransaction(hash_1);
-
-  // console.log(r);
-
+const create_init_wallet_transaction = (
+  transferAccPubKey,
+  [signer1, signer2, signer3],
+  required_amount_of_signs,
+  programKey
+) => {
   const instruction = new TransactionInstruction({
     keys: [
       {
@@ -107,41 +89,197 @@ const MultisigWalletSchema = new Map([
         isWritable: true,
       },
       {
-        pubkey: signer1,
+        pubkey: signer1.publicKey,
         isSigner: false,
         isWritable: false,
       },
       {
-        pubkey: signer2,
+        pubkey: signer2.publicKey,
         isSigner: false,
         isWritable: false,
       },
       {
-        pubkey: signer3,
+        pubkey: signer3.publicKey,
         isSigner: false,
         isWritable: false,
       },
     ],
     data: Buffer.from([
-      1,
-      ...new Uint8Array(bignum(10).toBuffer({ endian: "little", size: 8 })),
-      ...signer1.toBytes(),
+      0,
+      required_amount_of_signs,
+      // ...new Uint8Array(bignum(10).toBuffer({ endian: "little", size: 8 })),
+      // ...signer1.toBytes(),
     ]),
     programId: programKey,
   });
 
+  const t = new Transaction().add(instruction);
+
+  return t;
+};
+
+/**
+ *
+ * @param {import("@solana/web3.js").Connection} connection
+ */
+const create_request_account = async (
+  connection,
+  amount,
+  receiver,
+  payer,
+  programKey
+) => {
+  const request_size = borsh.serialize(
+    MultisigWalletRequestSchema,
+    new MultisigWalletRequest({
+      amount: amount,
+      receiver: receiver.publicKey.toBytes(),
+    })
+  ).length;
+
+  const lamports = await connection.getMinimumBalanceForRentExemption(
+    request_size
+  );
+
+  console.log("lamports request ", lamports);
+
+  const request_acc = new Keypair();
+
+  const request_acc_pubkey = request_acc.publicKey;
+
+  const transaction_1 = new Transaction().add(
+    SystemProgram.createAccount({
+      fromPubkey: payer.publicKey,
+      newAccountPubkey: request_acc_pubkey,
+      space: request_size,
+      lamports: lamports,
+      programId: programKey,
+    })
+  );
+
+  return [
+    request_acc_pubkey,
+    await sendAndConfirmTransaction(connection, transaction_1, [
+      payer,
+      request_acc,
+    ]),
+  ];
+};
+
+const create_request_transaction = (
+  transferAccPubKey,
+  requestAccPubkey,
+  signer,
+  receiver,
+  amount,
+  programKey
+) => {
+  const instruction = new TransactionInstruction({
+    keys: [
+      {
+        pubkey: transferAccPubKey,
+        isSigner: false,
+        isWritable: true,
+      },
+      {
+        pubkey: requestAccPubkey,
+        isSigner: false,
+        isWritable: true,
+      },
+      {
+        pubkey: signer,
+        isSigner: true,
+        isWritable: false,
+      },
+    ],
+    data: Buffer.from([
+      1,
+      ...new Uint8Array(bignum(amount).toBuffer({ endian: "little", size: 8 })),
+      ...receiver.toBytes(),
+    ]),
+    programId: programKey,
+  });
+
+  const t = new Transaction().add(instruction);
+
+  return t;
+};
+
+(async () => {
+  const connection = new Connection("http://localhost:8899", "confirmed");
+
+  const payer = Keypair.generate();
+  const airdropSignature = await connection.requestAirdrop(
+    payer.publicKey,
+    LAMPORTS_PER_SOL
+  );
+  await connection.confirmTransaction(airdropSignature);
+
+  const programKey = new PublicKey(PROGRAM_ID);
+
+  const required_amount_of_signs = 2;
+  const [signer1, signer2, signer3] = generate_signers();
+
+  const [transferAccPubKey] = await create_init_wallet_account(
+    connection,
+    [signer1, signer2, signer3],
+    required_amount_of_signs,
+    payer,
+    programKey
+  );
+
+  const init_wallet_transaction = create_init_wallet_transaction(
+    transferAccPubKey,
+    [signer1, signer2, signer3],
+    required_amount_of_signs,
+    programKey
+  );
+
   const hash = await sendAndConfirmTransaction(
     connection,
-    new Transaction().add(instruction),
-    [wallet]
+    init_wallet_transaction,
+    [payer]
   );
 
   const res = await connection.getTransaction(hash);
 
   console.log(res);
-  console.log({
-    signer1: signer1.toBase58(),
-    signer2: signer2.toBase58(),
-    signer3: signer3.toBase58(),
-  });
+  // console.log({
+  //   signer1: signer1.publicKey.toBase58(),
+  //   signer2: signer2.publicKey.toBase58(),
+  //   signer3: signer3.publicKey.toBase58(),
+  // });
+
+  const amount = 100000;
+  const receiver = new Keypair();
+  const [requestAccount] = await create_request_account(
+    connection,
+    amount,
+    receiver,
+    payer,
+    programKey
+  );
+
+  const request_transaction = create_request_transaction(
+    transferAccPubKey,
+    requestAccount,
+    signer1.publicKey,
+    receiver.publicKey,
+    amount,
+    programKey
+  );
+
+  const hash_request_transaction = await sendAndConfirmTransaction(
+    connection,
+    request_transaction,
+    [payer, signer1]
+  );
+
+  const res_request_transaction = await connection.getTransaction(
+    hash_request_transaction
+  );
+
+  console.log(res_request_transaction);
+
+  console.log(requestAccount.toBase58());
 })();

@@ -7,6 +7,8 @@ pub enum MultisigWalletError {
     InvalidInstruction,
     #[error("Already in use")]
     AlreadyInUse,
+    #[error("Multisig wallet account not initialized")]
+    WalletNotInitialized,
 }
 
 impl From<MultisigWalletError> for ProgramError {

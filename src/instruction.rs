@@ -5,6 +5,7 @@ use crate::error::MultisigWalletError::InvalidInstruction;
 pub enum MultisigWalletInstruction {
     InitWallet { m: u8 },
     Request { amount: u64, to_pub_key: Pubkey },
+    Sign,
 }
 
 impl MultisigWalletInstruction {
@@ -19,6 +20,7 @@ impl MultisigWalletInstruction {
                 amount: Self::unpack_amount(&input[1..9])?,
                 to_pub_key: Self::unpack_to_pub_key(&input[9..41])?,
             },
+            2 => Self::Sign,
             _ => return Err(InvalidInstruction.into()),
         })
     }

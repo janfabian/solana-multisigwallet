@@ -12,7 +12,9 @@ use solana_program::{
 };
 
 use crate::{
-    error::MultisigWalletError, instruction::MultisigWalletInstruction, state::MultisigWallet,
+    error::MultisigWalletError,
+    instruction::MultisigWalletInstruction,
+    state::{MultisigWallet, Request},
 };
 
 pub struct Processor;
@@ -39,6 +41,7 @@ impl Processor {
         match MultisigWalletInstruction::unpack(instruction_data)? {
             MultisigWalletInstruction::InitWallet { m } => {
                 msg!("MultisigWalletInstruction::InitWallet {:?}", m);
+                Self::init_wallet(m, instruction_data, accounts)?;
             }
             MultisigWalletInstruction::Request { amount, to_pub_key } => {
                 msg!(
@@ -46,6 +49,10 @@ impl Processor {
                     amount,
                     to_pub_key
                 );
+                Self::create_request(amount, to_pub_key, instruction_data, accounts)?;
+            }
+            MultisigWalletInstruction::Sign => {
+                msg!("Sign",);
             }
         };
 
@@ -58,14 +65,17 @@ impl Processor {
         // Log all the program's input parameters
         // sol_log_params(accounts, instruction_data);
 
-        let m = instruction_data.first();
-        // msg!("{:?}", instruction_data.first());
+        Ok(())
+    }
+
+    fn init_wallet(m: u8, _instruction_data: &[u8], accounts: &[AccountInfo]) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let wallet_account = next_account_info(account_info_iter)?;
 
         // Log the number of compute units remaining that the program can consume.
         sol_log_compute_units();
 
-        // msg!("prev {:?}", initializer.data.borrow());
-        let mut multisig_wallet = MultisigWallet::try_from_slice(&initializer.data.borrow())?;
+        let mut multisig_wallet = MultisigWallet::try_from_slice(&wallet_account.data.borrow())?;
 
         if multisig_wallet.is_initialized != 0 {
             return Err(MultisigWalletError::AlreadyInUse.into());
@@ -79,11 +89,57 @@ impl Processor {
         multisig_wallet.signer2 = *signer2.key;
         multisig_wallet.signer3 = *signer3.key;
         multisig_wallet.is_initialized = 1;
-        multisig_wallet.m = *m.unwrap();
+        multisig_wallet.m = m;
 
-        multisig_wallet.serialize(&mut &mut initializer.data.borrow_mut()[..])?;
+        multisig_wallet.serialize(&mut &mut wallet_account.data.borrow_mut()[..])?;
 
-        msg!("next {:?}", multisig_wallet);
+        msg!("wallet {:?}", multisig_wallet);
+
+        Ok(())
+    }
+
+    fn create_request(
+        amount: u64,
+        receiver: Pubkey,
+        _instruction_data: &[u8],
+        accounts: &[AccountInfo],
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let wallet_account = next_account_info(account_info_iter)?;
+
+        // Log the number of compute units remaining that the program can consume.
+        sol_log_compute_units();
+
+        let multisig_wallet = MultisigWallet::try_from_slice(&wallet_account.data.borrow())?;
+
+        if multisig_wallet.is_initialized != 1 {
+            return Err(MultisigWalletError::WalletNotInitialized.into());
+        }
+
+        let request_account = next_account_info(account_info_iter)?;
+        let mut request = Request::try_from_slice(&request_account.data.borrow())?;
+
+        if request.is_initialized != 0 {
+            return Err(MultisigWalletError::AlreadyInUse.into());
+        }
+
+        let signer = next_account_info(account_info_iter)?;
+
+        if !signer.is_signer {
+            return Err(ProgramError::IllegalOwner);
+        }
+
+        request.is_initialized = 1;
+        request.is_signed1 = 0;
+        request.is_signed2 = 0;
+        request.is_signed3 = 0;
+        request.amount = amount;
+        request.receiver = receiver;
+        request.wallet = *wallet_account.key;
+
+        request.serialize(&mut &mut request_account.data.borrow_mut()[..])?;
+
+        msg!("request {:?}", request);
 
         Ok(())
     }

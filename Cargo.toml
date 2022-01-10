@@ -1,5 +1,5 @@
 [package]
-name = "chainkeepers-multisig"
+name = "chainkeepers-multisig_v2"
 version = "0.1.0"
 edition = "2021"
 
