@@ -3,7 +3,9 @@ module.exports = {
   parserOptions: {
     ecmaVersion: 2020,
     sourceType: "module",
+    requireConfigFile: false,
   },
+  parser: "@babel/eslint-parser",
   ignorePatterns: ["node_modules/**"],
   extends: ["eslint:recommended", "plugin:prettier/recommended"],
   env: {
