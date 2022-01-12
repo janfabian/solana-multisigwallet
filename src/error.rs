@@ -9,6 +9,8 @@ pub enum MultisigWalletError {
     AlreadyInUse,
     #[error("Multisig wallet account not initialized")]
     WalletNotInitialized,
+    #[error("Request already fulfilled")]
+    RequestFulfilled,
 }
 
 impl From<MultisigWalletError> for ProgramError {

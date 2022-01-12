@@ -52,14 +52,14 @@ const create_init_wallet_account = async (
     wallet_size
   );
 
-  const transferAcc = new Keypair();
+  const wallet_acc = new Keypair();
 
-  const transferAccPubKey = transferAcc.publicKey;
+  const wallet_acc_pubkey = wallet_acc.publicKey;
 
   const transaction_1 = new Transaction().add(
     SystemProgram.createAccount({
       fromPubkey: payer.publicKey,
-      newAccountPubkey: transferAccPubKey,
+      newAccountPubkey: wallet_acc_pubkey,
       space: wallet_size,
       lamports: lamports,
       programId: programKey,
@@ -67,16 +67,17 @@ const create_init_wallet_account = async (
   );
 
   return [
-    transferAccPubKey,
+    wallet_acc_pubkey,
+    wallet_acc,
     await sendAndConfirmTransaction(connection, transaction_1, [
       payer,
-      transferAcc,
+      wallet_acc,
     ]),
   ];
 };
 
 const create_init_wallet_transaction = (
-  transferAccPubKey,
+  wallet_acc_pubkey,
   [signer1, signer2, signer3],
   required_amount_of_signs,
   programKey
@@ -84,7 +85,7 @@ const create_init_wallet_transaction = (
   const instruction = new TransactionInstruction({
     keys: [
       {
-        pubkey: transferAccPubKey,
+        pubkey: wallet_acc_pubkey,
         isSigner: false,
         isWritable: true,
       },
@@ -159,6 +160,7 @@ const create_request_account = async (
 
   return [
     request_acc_pubkey,
+    request_acc,
     await sendAndConfirmTransaction(connection, transaction_1, [
       payer,
       request_acc,
@@ -167,7 +169,7 @@ const create_request_account = async (
 };
 
 const create_request_transaction = (
-  transferAccPubKey,
+  wallet_acc_pubkey,
   requestAccPubkey,
   signer,
   receiver,
@@ -177,7 +179,7 @@ const create_request_transaction = (
   const instruction = new TransactionInstruction({
     keys: [
       {
-        pubkey: transferAccPubKey,
+        pubkey: wallet_acc_pubkey,
         isSigner: false,
         isWritable: true,
       },
@@ -205,6 +207,46 @@ const create_request_transaction = (
   return t;
 };
 
+const create_sign_transaction = (
+  wallet_acc_pubkey,
+  requestAccPubkey,
+  signer,
+  receiver,
+  amount,
+  programKey
+) => {
+  const instruction = new TransactionInstruction({
+    keys: [
+      {
+        pubkey: wallet_acc_pubkey,
+        isSigner: true,
+        isWritable: true,
+      },
+      {
+        pubkey: requestAccPubkey,
+        isSigner: false,
+        isWritable: true,
+      },
+      {
+        pubkey: signer,
+        isSigner: true,
+        isWritable: false,
+      },
+      {
+        pubkey: receiver,
+        isSigner: false,
+        isWritable: true,
+      },
+    ],
+    data: Buffer.from([2]),
+    programId: programKey,
+  });
+
+  const t = new Transaction().add(instruction);
+
+  return t;
+};
+
 (async () => {
   const connection = new Connection("http://localhost:8899", "confirmed");
 
@@ -220,7 +262,7 @@ const create_request_transaction = (
   const required_amount_of_signs = 2;
   const [signer1, signer2, signer3] = generate_signers();
 
-  const [transferAccPubKey] = await create_init_wallet_account(
+  const [wallet_acc_pubkey, wallet_acc] = await create_init_wallet_account(
     connection,
     [signer1, signer2, signer3],
     required_amount_of_signs,
@@ -229,7 +271,7 @@ const create_request_transaction = (
   );
 
   const init_wallet_transaction = create_init_wallet_transaction(
-    transferAccPubKey,
+    wallet_acc_pubkey,
     [signer1, signer2, signer3],
     required_amount_of_signs,
     programKey
@@ -261,7 +303,7 @@ const create_request_transaction = (
   );
 
   const request_transaction = create_request_transaction(
-    transferAccPubKey,
+    wallet_acc_pubkey,
     requestAccount,
     signer1.publicKey,
     receiver.publicKey,
@@ -281,5 +323,45 @@ const create_request_transaction = (
 
   console.log(res_request_transaction);
 
-  console.log(requestAccount.toBase58());
+  const sign_transaction = create_sign_transaction(
+    wallet_acc_pubkey,
+    requestAccount,
+    signer1.publicKey,
+    receiver.publicKey,
+    amount,
+    programKey
+  );
+
+  const hash_sign_transaction = await sendAndConfirmTransaction(
+    connection,
+    sign_transaction,
+    [payer, signer1, wallet_acc]
+  );
+
+  const res_sign_transaction = await connection.getTransaction(
+    hash_sign_transaction
+  );
+
+  console.log(res_sign_transaction);
+
+  const sign_transaction2 = create_sign_transaction(
+    wallet_acc_pubkey,
+    requestAccount,
+    signer2.publicKey,
+    receiver.publicKey,
+    amount,
+    programKey
+  );
+
+  const hash_sign_transaction2 = await sendAndConfirmTransaction(
+    connection,
+    sign_transaction2,
+    [payer, signer2, wallet_acc]
+  );
+
+  const res_sign_transaction2 = await connection.getTransaction(
+    hash_sign_transaction2
+  );
+
+  console.log(res_sign_transaction2);
 })();

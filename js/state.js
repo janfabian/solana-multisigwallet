@@ -29,6 +29,7 @@ export const MultisigWalletSchema = new Map([
 
 export class MultisigWalletRequest {
   is_initialized = 0;
+  is_finished = 0;
   is_signed1 = 0;
   is_signed2 = 0;
   is_signed3 = 0;
@@ -48,6 +49,7 @@ export const MultisigWalletRequestSchema = new Map([
       kind: "struct",
       fields: [
         ["is_initialized", "u8"],
+        ["is_finished", "u8"],
         ["amount", "u64"],
         ["wallet", [32]],
         ["receiver", [32]],

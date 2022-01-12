@@ -13,6 +13,7 @@ pub struct MultisigWallet {
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 pub struct Request {
     pub is_initialized: u8,
+    pub is_finished: u8,
     pub amount: u64,
     pub wallet: Pubkey,
     pub receiver: Pubkey,
